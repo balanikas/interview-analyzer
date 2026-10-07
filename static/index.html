@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interview Timeline</title>
+<style>
+  :root { color-scheme:light; --bg:#e9edf3; --card:#fff; --text:#1c1c21; --muted:#5a5a66; --accent:#c4302b; --border:#b8c0cc;
+          --sp-int:#1d5fb8; --sp-int-bg:#d5e4fa; --sp-guest:#6b3fa0; --sp-guest-bg:#e6d9f5;
+          --sp-other:#55555f; --sp-other-bg:#e1e3e8; }
+  * { box-sizing: border-box; }
+  html, body { height:100%; overflow:hidden; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui,sans-serif; }
+  .layout { display:grid; grid-template-columns:300px minmax(0, 1fr); align-items:stretch; max-width:1560px; height:100vh; margin:0 auto; }
+  aside { background:#f6f8fb; min-height:0; display:flex; flex-direction:column; gap:12px; padding:20px 14px;
+          border-right:1px solid var(--border); }
+  main { min-width:0; min-height:0; overflow:hidden auto; padding:20px 20px 64px; }
+  h1 { font-size:1.25rem; margin:0; }
+  .row { display:flex; gap:8px; }
+  input { flex:1; min-width:0; padding:8px 10px; font:inherit; color:var(--text); background:var(--card);
+          border:1px solid var(--border); border-radius:8px; }
+  button { padding:8px 14px; font:inherit; font-weight:600; color:#fff; background:var(--accent);
+           border:0; border-radius:8px; cursor:pointer; }
+  button:disabled { opacity:.6; cursor:wait; }
+  #status { color:var(--muted); font-size:.85rem; }
+  #status:empty { display:none; }
+  #status.error { color:var(--accent); }
+  #audiolist { flex:1; min-height:0; overflow:auto; margin:0 -14px; padding:0 14px; }
+  #audiolist details { margin-bottom:6px; }
+  #audiolist summary { cursor:pointer; padding:6px 0; color:var(--muted); font-size:.72rem; font-weight:700;
+                       text-transform:uppercase; letter-spacing:.04em; }
+  #audiolist ul { list-style:none; margin:0; padding:0; }
+  #audiolist button.ep { display:block; width:100%; text-align:left; padding:6px 8px; margin-bottom:2px; color:var(--text);
+                         background:none; font-weight:500; font-size:.85rem; border-radius:6px; }
+  #audiolist button.ep:hover { background:var(--card); }
+  #audiolist button.ep.active { background:var(--card); box-shadow:inset 3px 0 0 var(--accent); }
+  #audiolist button.ep:disabled { opacity:.6; }
+  #audiolist .meta { display:block; color:var(--muted); font-size:.75rem; }
+  #logbox { max-width:760px; margin:0 auto; padding:14px 16px; max-height:70vh; overflow:auto; background:#fff; color:#1c1c21;
+            border:1px solid var(--border); border-radius:10px; font:.85rem/1.6 ui-monospace,monospace; }
+  #log > div::before { content:"> "; color:#8a8a96; }
+  #log .ok { color:#1a7f43; }
+  #log .err { color:#c4302b; }
+  #log button { margin-top:10px; }
+  .empty { color:var(--muted); padding:48px 0; text-align:center; }
+  .now { flex:1; min-width:0; display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+  .now #nowtitle { font-size:.88rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .now a { color:var(--text); }
+  .now a:hover { color:var(--accent); }
+  .now .cost { color:var(--muted); font-size:.8rem; white-space:nowrap; cursor:help; }
+  .transcript { max-height:70vh; overflow:auto; background:var(--card);
+                border:1px solid var(--border); border-radius:10px; }
+  .thead { position:sticky; top:0; z-index:1; display:flex; align-items:center; justify-content:space-between; gap:8px;
+           flex-wrap:wrap; padding:10px 16px; background:var(--card); border-bottom:1px solid var(--border); }
+  .thead h2 { margin:0; font-size:.95rem; }
+  #tlines { list-style:none; margin:0; padding:8px 0; }
+  #tlines li { padding:4px 16px 4px 13px; font-size:.9rem; border-left:3px solid transparent; }
+  #tlines li { cursor:pointer; }
+  #tlines li.cur { outline:2px solid var(--accent); outline-offset:-2px; }
+  #tlines .t { font:600 .78rem ui-monospace,monospace; color:var(--muted); margin-right:6px; }
+  .spk { display:inline-block; font-size:.72rem; font-weight:700; line-height:1.4; padding:0 6px; border-radius:4px;
+         margin-right:5px; vertical-align:1px; }
+  .spk.interviewer { color:var(--sp-int); background:var(--sp-int-bg); }
+  .spk.interviewee { color:var(--sp-guest); background:var(--sp-guest-bg); }
+  .spk.other { color:var(--sp-other); background:var(--sp-other-bg); }
+  /* A section heading's explanation, shown on hover or keyboard focus of the (i). */
+  .info { position:relative; display:inline-block; margin-left:4px; color:var(--muted); font-size:.8rem; font-weight:400; cursor:help; }
+  .info::after { content:attr(data-tip); position:absolute; z-index:6; left:0; top:calc(100% + 4px); width:max-content; max-width:min(360px, 80vw);
+                 padding:8px 12px; background:var(--card); color:var(--text); border:1px solid var(--border); border-radius:8px;
+                 box-shadow:0 4px 16px rgba(0,0,0,.18); font-size:.82rem; line-height:1.45; text-transform:none; letter-spacing:0;
+                 visibility:hidden; pointer-events:none; }
+  .info:hover::after, .info:focus::after { visibility:visible; }
+  .treebox { background:var(--card); border:1px solid var(--border); border-radius:10px; margin-bottom:16px; }
+  .treebox h2 { margin:0; padding:10px 16px 0; font-size:.95rem; }
+  .stats { border-collapse:collapse; width:100%; font-size:.85rem; margin:8px 0; }
+  .stats th { text-align:right; font-weight:600; color:var(--muted); font-size:.75rem; padding:4px 10px; white-space:nowrap; }
+  .stats td { text-align:right; padding:6px 10px; border-top:1px solid var(--border); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .stats th:first-child, .stats td:first-child { text-align:left; }
+  .stats th:first-child, .stats td:first-child { position:sticky; left:0; z-index:1; background:var(--card); box-shadow:1px 0 0 var(--border); }
+  .stats .who { display:flex; align-items:center; gap:6px; }
+  .stats .who input { flex:1; min-width:140px; padding:4px 8px; font-size:.85rem; }
+  .stats .share { display:flex; align-items:center; gap:6px; justify-content:flex-end; }
+  .stats .bar { width:80px; height:6px; border-radius:3px; background:var(--border); overflow:hidden; }
+  .stats .bar > span { display:block; height:100%; background:var(--sp-int); }
+  #interruptions { list-style:none; margin:8px 0 0; padding:0; border-top:1px solid var(--border); max-height:240px; overflow:auto; }
+  #interruptions li { padding:6px 16px; font-size:.88rem; cursor:pointer; border-bottom:1px solid var(--border); }
+  #interruptions li:hover { background:var(--bg); }
+  #interruptions .t { font:600 .78rem ui-monospace,monospace; color:var(--muted); margin-right:6px; }
+  #interruptions .kind { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--accent); margin-left:6px; }
+  #interruptions .why { display:block; color:var(--muted); font-size:.8rem; }
+  #interruptions .none { cursor:default; color:var(--muted); }
+  #speechline .cut path { stroke:var(--accent); stroke-width:2.5; stroke-linecap:round; fill:none; }
+  #speechline .cut { cursor:pointer; }
+  #speechline .cuthit { fill:var(--card); fill-opacity:.01; }
+  #speechline .cut:hover .cuthit { fill-opacity:.9; stroke:var(--accent); }
+  #speechline .cutlink { stroke:var(--accent); stroke-width:1.5; stroke-dasharray:3 3; pointer-events:none; }
+  .score { display:flex; flex-wrap:wrap; gap:8px 24px; padding:10px 16px 4px; }
+  .score button { font:inherit; font-size:.8rem; color:var(--muted); text-align:left; background:none; cursor:pointer;
+                  border:1px solid transparent; border-radius:8px; padding:4px 8px; margin:-4px -8px; }
+  .score button:hover { border-color:var(--border); }
+  .score button.on { border-color:var(--accent); background:var(--bg); }
+  .legend { display:flex; flex-wrap:wrap; gap:8px 32px; padding:4px 16px 8px; }
+  .legend h3 { margin:0 0 4px; font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  .legend .term { display:inline-block; margin-right:12px; font-size:.82rem; white-space:nowrap; }
+  .legend .info { margin-left:2px; font-size:.72rem; }
+  .legend .info::after { white-space:normal; }
+  .score b { display:block; font-size:1.25rem; color:var(--text); font-variant-numeric:tabular-nums; }
+  #exchanges { list-style:none; margin:8px 0 0; padding:0; border-top:1px solid var(--border); max-height:320px; overflow:auto; }
+  #exchanges li { padding:6px 16px; font-size:.88rem; cursor:pointer; border-bottom:1px solid var(--border); }
+  #exchanges li:hover { background:var(--bg); }
+  #exchanges .t { font:600 .78rem ui-monospace,monospace; color:var(--muted); margin-right:6px; }
+  #exchanges .tag { display:inline-block; font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+                    padding:0 6px; margin-right:4px; border-radius:4px; color:var(--muted); background:var(--bg); }
+  #exchanges .tag.bad { color:var(--accent); }
+  #exchanges .tag.good { color:var(--sp-int); }
+  #exchanges .why { display:block; color:var(--muted); font-size:.8rem; }
+  .player { position:sticky; top:0; z-index:4; display:flex; align-items:center; gap:10px; padding:6px 16px; margin-top:4px;
+            background:var(--card); border-bottom:1px solid var(--border); }
+  .player button { flex:none; width:28px; height:28px; padding:0; border-radius:50%; border:1px solid var(--border);
+                   background:var(--bg); color:var(--text); cursor:pointer; font-size:.75rem; line-height:1; }
+  .player button:hover { color:var(--accent); border-color:var(--accent); }
+  .player button.skip { width:auto; padding:0 8px; border-radius:14px; font-size:.7rem; }
+  .player #seek { flex:1 1 120px; min-width:80px; max-width:360px; accent-color:var(--accent); }
+  .player .clock { flex:none; font:600 .78rem ui-monospace,monospace; color:var(--muted); }
+  .tlwrap { display:flex; }
+  .tlwrap .treescroll { flex:1; min-width:0; padding-left:0; }
+  #speechlabels { flex:none; display:block; margin-left:8px; background:var(--card); }
+  #speechline .playhead { stroke:var(--accent); stroke-width:2; pointer-events:none; }
+  .treescroll { overflow-x:auto; padding:0 8px 8px; }
+  #speechline { display:block; }
+  #speechline .band, #speechlabels .band { fill:var(--muted); fill-opacity:.07; }
+  #speechlabels .who { fill:var(--text); font-size:12px; font-weight:600; dominant-baseline:central; }
+  .cols { display:grid; grid-template-columns:minmax(0, 1fr) 380px; gap:0 16px; align-items:start; }
+  .colmain, .colside { min-width:0; }
+  .colside #interruptions { max-height:34vh; }
+  .colside #exchanges { max-height:44vh; }
+  #speechline .grid { stroke:var(--border); stroke-width:1; }
+  #speechline .axis { fill:var(--muted); font-size:10px; text-anchor:middle; }
+  #speechline .speech { fill:var(--sp-int); stroke:var(--card); stroke-width:1; cursor:pointer; }
+  #speechline.filtered .speech { fill-opacity:.2; }
+  #speechline.filtered .speech.hl { fill:var(--accent); fill-opacity:1; }
+  #speechline .speech.selected { stroke:var(--text); stroke-width:2.5; }
+  #tip { position:fixed; z-index:10; max-width:min(440px, calc(100vw - 8px)); padding:8px 12px; pointer-events:none;
+         background:var(--card); color:var(--text); border:1px solid var(--border); border-radius:8px;
+         box-shadow:0 4px 16px rgba(0,0,0,.18); font-size:.85rem; line-height:1.45; }
+  #tip .tip-head { font-size:.75rem; font-weight:700; color:var(--muted); margin-bottom:4px; }
+  #tip .tip-body { max-height:min(45vh, 360px); overflow:hidden; white-space:pre-wrap; }
+  #tip .tip-body.clipped { -webkit-mask-image:linear-gradient(#000 80%, transparent); mask-image:linear-gradient(#000 80%, transparent); }
+  #tip .tip-foot { font-size:.75rem; color:var(--muted); margin-top:6px; }
+  [hidden] { display:none !important; }
+  @media (max-width:1300px) { .cols { display:block; } }
+  @media (max-width:900px) {
+    html, body { height:auto; overflow:auto; }
+    .layout { display:block; height:auto; }
+    main { overflow:visible; }
+    aside { height:auto; border-right:0; border-bottom:1px solid var(--border); }
+    #audiolist { max-height:40vh; }
+    .transcript { max-height:60vh; }
+  }
+
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside>
+    <h1>Interview Timeline</h1>
+    <form id="form">
+      <div class="row">
+        <input id="turl" type="url" placeholder="Paste a link to an audio file" aria-label="Link to an audio file">
+        <button id="go">Analyze</button>
+      </div>
+    </form>
+    <div id="status" role="status"></div>
+    <div id="audiolist" aria-label="Downloaded audio"></div>
+  </aside>
+
+  <main>
+    <section id="logbox" hidden aria-label="Analysis log"><div id="log" aria-live="polite"></div></section>
+    <p class="empty" id="empty">Pick an episode or paste a link.</p>
+    <div id="result" class="cols" hidden>
+      <div class="colmain">
+      <div class="treebox" id="statsbox">
+        <h2>Speakers<span class="info" tabindex="0" data-tip="Names are picked up from what is said. Type a name to correct or add one; it's saved with the transcript.">ⓘ</span></h2>
+        <div class="treescroll"><table class="stats" id="stats"></table></div>
+      </div>
+      <div class="treebox" id="speechbox">
+        <h2>Timeline<span class="info" tabindex="0" data-tip="One row per speaker, one bar per stretch of speech. Click a bar to play from there and highlight it in the transcript. A cross marks an interruption.">ⓘ</span></h2>
+        <div class="player">
+          <button id="backbtn" class="skip" type="button" aria-label="Back 10 seconds" title="Back 10 s">−10</button>
+          <button id="playbtn" type="button" aria-label="Play">▶</button>
+          <button id="fwdbtn" class="skip" type="button" aria-label="Forward 10 seconds" title="Forward 10 s">+10</button>
+          <input id="seek" type="range" min="0" max="0" step="0.1" value="0" aria-label="Seek">
+          <span class="clock" id="clock">00:00 / 00:00</span>
+          <span class="now"><span id="nowtitle"></span><span class="cost" id="cost"></span></span>
+          <audio id="player" preload="metadata"></audio>
+        </div>
+        <div class="tlwrap">
+          <svg id="speechlabels" aria-hidden="true"></svg>
+          <div class="treescroll"><svg id="speechline" role="group" aria-label="Speaker timeline"></svg></div>
+        </div>
+      </div>
+      <section class="transcript" id="transcript" aria-label="Transcript">
+        <div class="thead">
+          <h2>Transcript<span class="info" tabindex="0" data-tip="Click a line to play from there.">ⓘ</span></h2>
+        </div>
+        <ol id="tlines"></ol>
+      </section>
+      </div>
+      <div class="colside">
+      <div class="treebox" id="intbox" hidden>
+        <h2><span id="inttitle">Interruptions</span><span class="info" tabindex="0" data-tip="One speaker cutting in while another is mid-thought, or talking over them. Detected automatically, so treat it as an estimate. Click one to hear it.">ⓘ</span></h2>
+        <ol id="interruptions"></ol>
+      </div>
+      <div class="treebox" id="exbox" hidden>
+        <h2>Question and answer metrics<span class="info" tabindex="0" data-tip="Each host question is judged on how it was asked and how the guest answered it. Judged automatically from the text alone, so treat it as an estimate. Click a figure to highlight those moments on the timeline.">ⓘ</span></h2>
+        <div class="score" id="score"></div>
+      </div>
+      <div class="treebox" id="exlistbox" hidden>
+        <h2>Exchanges<span class="info" tabindex="0" data-tip="Every host question with the guest's reply, and the verdicts for each. Click one to hear it.">ⓘ</span></h2>
+        <div class="legend" id="legend"></div>
+        <ol id="exchanges"></ol>
+      </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>
