@@ -68,6 +68,15 @@ export interface Exchanges {
   items: Exchange[];
 }
 
+/**
+ * Where the interview itself runs, as utterance indices: the utterances before `start` are the intro (ads, show
+ * promotion, announcements by voices other than the interview's speakers) and those from `end` on are the outro.
+ */
+export interface Segments {
+  start: number;
+  end: number;
+}
+
 /** One third-party API charge. */
 export interface CostItem {
   service: "AssemblyAI" | "Claude";
@@ -85,7 +94,10 @@ export interface Cost {
 export interface TranscribeResponse {
   file: string;
   duration: number | null;
+  /** The intro's and outro's utterances carry the speaker "Intro" and "Outro" in place of their diarization label. */
   utterances: Utterance[];
+  /** Where the intro ends and the outro starts; missing until they have been looked for. */
+  segments?: Segments;
   /** AssemblyAI model that transcribed it ("universal-3-5-pro", or "universal-2" for languages that model lacks). Missing for transcripts saved before it was recorded. */
   speechModel?: string;
   /** Real names by diarization label ("A" -> "Paul Runko"); a label without one is shown as "Speaker A". Missing until names have been worked out. */

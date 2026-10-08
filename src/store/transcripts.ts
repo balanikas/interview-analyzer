@@ -5,13 +5,14 @@ import { access } from "node:fs/promises";
 
 import { paths } from "../config.js";
 import type { RawTranscript } from "../providers/assemblyai.js";
-import type { Cost, Exchanges, Interruption, Utterance } from "../shared/types.js";
+import type { Cost, Exchanges, Interruption, Segments, Utterance } from "../shared/types.js";
 import { fileIn, readJson, writeJson } from "./json.js";
 
 /** What the app worked out from a transcript. */
 export interface Analysis {
   /** The version of each analyzer its result was made with; an older one is redone when the transcript is opened. */
   versions?: Partial<Record<AnalysisKey, number>>;
+  segments?: Segments;
   names?: Record<string, string>;
   interruptions?: Interruption[];
   exchanges?: Exchanges;
@@ -19,7 +20,7 @@ export interface Analysis {
   cost?: Cost;
 }
 
-export type AnalysisKey = "names" | "interruptions" | "exchanges";
+export type AnalysisKey = "segments" | "names" | "interruptions" | "exchanges";
 
 const rawPath = (name: string) => fileIn(paths.raw, name, ".json");
 const analysisPath = (name: string) => fileIn(paths.analysis, name, ".json");

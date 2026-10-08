@@ -8,40 +8,46 @@ import { clock, pct } from "./format.js";
 import { playMoment } from "./player.js";
 import { on, set, state } from "./store.js";
 
-// A scorecard figure: its value, and the utterances it highlights on the timeline when clicked.
-interface Figure { label: string; tip: string; value: string; detail: string; indices: number[] }
+// A scorecard figure: its value, and the utterances it highlights on the timeline when clicked. It is headed by the
+// labels the Exchanges and Interruptions lists use for the same thing, styled the same way.
+interface Figure { label: string; tags: Label[]; tip: string; value: string; indices: number[] }
+
+// A label as the lists draw it: an exchange tag, an interruption's context, or a word joining two of them.
+type Label = { tag: string; cls?: string } | { kind: string; cls: InterruptionContext } | { or: true };
+const OR: Label = { or: true };
 
 function hostFigures(data: TranscribeResponse, items: Exchange[]): Figure[] {
   const hours = hoursOf(data);
   // Host interruptions of one kind, as a rate per hour; the interruptions themselves are highlighted.
-  const perHour = (label: string, tip: string, context: InterruptionContext): Figure => {
+  const perHour = (label: string, kind: string, tip: string, context: InterruptionContext): Figure => {
     const hits = (data.interruptions ?? []).filter(i => interruptionContext(data, i) === context);
     return {
-      label, tip, value: data.interruptions && hours ? (hits.length / hours).toFixed(1) : "–",
-      detail: data.interruptions ? `${hits.length}, per hour` : "not judged", indices: hits.map(i => i.index),
+      label, tags: [{ kind, cls: context }], tip,
+      value: data.interruptions && hours ? `${(hits.length / hours).toFixed(1)}/h` : "–",
+      indices: hits.map(i => i.index),
     };
   };
   return [
-    share(data, items, "Follow-up questions", "Questions that build on something specific the guest just said.", e => e.followUp, false),
-    share(data, items, "Challenging follow-ups", "Follow-ups that also put an objection or inconvenient fact to the guest.", e => e.followUp && e.question === "challenge", false),
-    share(data, items, "Challenging questions", "Questions that put an objection or inconvenient fact to the guest.", e => e.question === "challenge", false),
-    share(data, items, "Thoughtful questions", "Open or challenging questions: not softballs, not yes/no.", thoughtful, false),
-    perHour("Cut into answers", "A host cut in while the guest was answering the question. Lower is better.", "answer"),
-    perHour("Pressed a dodge", "A host cut in while the guest pivoted or evaded. Pressure, not counted against the host.", "dodge"),
+    share(data, items, "Follow-up questions", [{ tag: "follow-up", cls: "good" }], "Questions that build on something specific the guest just said.", e => e.followUp, false),
+    share(data, items, "Challenging follow-ups", [{ tag: "challenge", cls: "good" }, { tag: "follow-up", cls: "good" }], "Follow-ups that also put an objection or inconvenient fact to the guest.", e => e.followUp && e.question === "challenge", false),
+    share(data, items, "Challenging questions", [{ tag: "challenge", cls: "good" }], "Questions that put an objection or inconvenient fact to the guest.", e => e.question === "challenge", false),
+    share(data, items, "Thoughtful questions", [{ tag: "open" }, OR, { tag: "challenge", cls: "good" }], "Open or challenging questions: not softballs, not yes/no.", thoughtful, false),
+    perHour("Cut into answers", "into an answer", "A host cut in while the guest was answering the question. Lower is better.", "answer"),
+    perHour("Pressed a dodge", "pressing a dodge", "A host cut in while the guest pivoted or evaded. Pressure, not counted against the host.", "dodge"),
   ];
 }
 
 const guestFigures = (data: TranscribeResponse, items: Exchange[]): Figure[] => [
-  share(data, items, "Direct answers", "Answers that address the question asked.", e => e.answer === "direct", true),
-  share(data, items, "Non-answers", "Answers that pivot to another question or say nothing checkable. Lower is better.", dodged, true),
-  share(data, items, "High-density answers", "Answers with plenty of facts, figures, examples or reasoning.", e => e.density === "high", true),
+  share(data, items, "Direct answers", [{ tag: "direct" }], "Answers that address the question asked.", e => e.answer === "direct", true),
+  share(data, items, "Non-answers", [{ tag: "pivot", cls: "bad" }, OR, { tag: "evasive", cls: "bad" }], "Answers that pivot to another question or say nothing checkable. Lower is better.", dodged, true),
+  share(data, items, "High-density answers", [{ tag: "high density" }], "Answers with plenty of facts, figures, examples or reasoning.", e => e.density === "high", true),
 ];
 
 // A share of the exchanges: the questions themselves, or the guest's replies, are highlighted.
-function share(data: TranscribeResponse, items: Exchange[], label: string, tip: string, test: (e: Exchange) => boolean, reply: boolean): Figure {
+function share(data: TranscribeResponse, items: Exchange[], label: string, tags: Label[], tip: string, test: (e: Exchange) => boolean, reply: boolean): Figure {
   const hits = items.flatMap((e, k) => (test(e) ? [{ e, k }] : []));
   return {
-    label, tip, value: pct(hits.length / items.length), detail: `${hits.length} of ${items.length}`,
+    label, tags, tip, value: pct(hits.length / items.length),
     indices: hits.flatMap(({ e, k }) => (reply ? replyIndices(data, k) : [e.index])),
   };
 }
@@ -51,10 +57,11 @@ const figures = new Map<string, Figure>();
 function renderScore(id: string, list: Figure[]): void {
   for (const f of list) figures.set(f.label, f);
   $(id).replaceChildren(...list.map(f => {
-    const button = h("button", "", h("b", "", f.value), `${f.label} (${f.detail})`);
+    const labels = f.tags.map(t => "or" in t ? h("span", "or", "or") : "kind" in t ? h("span", `kind ${t.cls}`, t.kind) : tag(t.tag, t.cls));
+    const button = h("button", "", h("b", "", f.value), h("span", "labels", ...labels));
     button.type = "button";
     button.dataset.metric = f.label;
-    button.title = `${f.tip} Click to highlight on the timeline.`;
+    button.title = `${f.label}: ${f.tip} Click to highlight on the timeline.`;
     button.addEventListener("click", () => set({ metric: state().metric === f.label ? null : f.label }));
     return button;
   }));

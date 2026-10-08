@@ -7,6 +7,7 @@
 import { z } from "zod";
 
 import { ask, claudeAvailable } from "../providers/claude.js";
+import { isFiller } from "../shared/segments.js";
 import type { Exchange, Exchanges, Utterance } from "../shared/types.js";
 import { inBatches, type Analyzer, type Result } from "./analyzer.js";
 
@@ -32,10 +33,14 @@ const words = (text: string) => text.match(/\S+/g)?.length ?? 0;
 const tail = (text: string, n: number) => (text.length > n ? `…${text.slice(-n)}` : text);
 const head = (text: string, n: number) => (text.length > n ? `${text.slice(0, n)}…` : text);
 
-/** Consecutive utterances by one speaker joined into a single turn (the transcriber often splits one turn in several). */
+/**
+ * Consecutive utterances by one speaker joined into a single turn (the transcriber often splits one turn in several).
+ * The intro and outro are left out: they ask nothing of the guest.
+ */
 function mergeTurns(utterances: Utterance[]): Turn[] {
   const turns: Turn[] = [];
   utterances.forEach((u, index) => {
+    if (isFiller(u.speaker)) return;
     const last = turns.at(-1);
     if (last?.speaker === u.speaker) last.text += ` ${u.text}`;
     else turns.push({ speaker: u.speaker, index, start: u.start, text: u.text });

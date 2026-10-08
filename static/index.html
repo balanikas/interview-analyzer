@@ -72,6 +72,9 @@
   .spk.interviewer { color:var(--sp-int); background:var(--sp-int-bg); }
   .spk.interviewee { color:var(--sp-guest); background:var(--sp-guest-bg); }
   .spk.other { color:var(--sp-other); background:var(--sp-other-bg); }
+  /* The intro and outro (ads, show promotion): set apart from the interview, not a speaker in it. */
+  .spk.filler { color:var(--muted); background:transparent; box-shadow:inset 0 0 0 1px var(--border); }
+  #tlines li.filler { color:var(--muted); }
   /* A section heading's explanation, shown on hover or keyboard focus of the (i). */
   /* The tooltip itself is #infotip, one element fixed to the window and placed by showInfo(), so a narrow column can't clip it. */
   .info { display:inline-block; margin-left:4px; color:var(--muted); font-size:.8rem; font-weight:400; cursor:help; }
@@ -107,8 +110,8 @@
   #speechline .cut:hover .cuthit { fill-opacity:.9; stroke:var(--accent); }
   #speechline .cutlink { stroke:var(--accent); stroke-width:1.5; stroke-dasharray:3 3; pointer-events:none; }
   .scorehead { margin:10px 16px 0; font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
-  .score { display:flex; flex-wrap:wrap; gap:8px 24px; padding:10px 16px 4px; }
-  .score button { font:inherit; font-size:.8rem; color:var(--muted); text-align:left; background:none; cursor:pointer;
+  .score { display:flex; flex-direction:column; align-items:flex-start; gap:6px; padding:10px 16px 4px; }
+  .score button { display:flex; align-items:baseline; gap:8px; font:inherit; font-size:.8rem; color:var(--muted); text-align:left; background:none; cursor:pointer;
                   border:1px solid transparent; border-radius:8px; padding:4px 8px; margin:-4px -8px; }
   .score button:hover { border-color:var(--border); }
   .score button.on { border-color:var(--accent); background:var(--bg); }
@@ -116,14 +119,17 @@
   #infotip p { margin:0 0 8px; }
   #infotip > div { display:grid; grid-template-columns:max-content 1fr; gap:4px 10px; align-items:baseline; margin-top:8px; }
   #infotip h3 { grid-column:1 / -1; margin:0; font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
-  #infotip .tag, #exchanges .tag { display:inline-block; font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+  #infotip .tag, #exchanges .tag, .score .tag { display:inline-block; font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
                     padding:0 6px; margin-right:4px; border-radius:4px; color:var(--muted); background:var(--bg); }
-  #infotip .tag.bad, #exchanges .tag.bad { color:var(--accent); }
-  #infotip .tag.good, #exchanges .tag.good { color:var(--sp-int); }
-  #infotip .kind { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--accent); }
-  #infotip .kind.dodge { color:var(--sp-int); }
-  #infotip .kind.guest { color:var(--muted); }
-  .score b { display:block; font-size:1.25rem; color:var(--text); font-variant-numeric:tabular-nums; }
+  #infotip .tag.bad, #exchanges .tag.bad, .score .tag.bad { color:var(--accent); }
+  #infotip .tag.good, #exchanges .tag.good, .score .tag.good { color:var(--sp-int); }
+  #infotip .kind, .score .kind { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--accent); }
+  #infotip .kind.dodge, .score .kind.dodge { color:var(--sp-int); }
+  #infotip .kind.guest, .score .kind.guest { color:var(--muted); }
+  /* A figure on one line: its value, then the labels it counts as the lists draw them. */
+  .score .labels { white-space:nowrap; }
+  .score .or { font-size:.7rem; margin-right:4px; }
+  .score b { min-width:3.2em; font-size:1rem; color:var(--text); font-variant-numeric:tabular-nums; }
   #exchanges { list-style:none; margin:8px 0 0; padding:0; border-top:1px solid var(--border); max-height:320px; overflow:auto; }
   #exchanges li { padding:6px 16px; font-size:.88rem; cursor:pointer; border-bottom:1px solid var(--border); }
   #exchanges li:hover { background:var(--bg); }
@@ -167,6 +173,7 @@
   #speechline .grid { stroke:var(--border); stroke-width:1; }
   #speechline .axis { fill:var(--muted); font-size:10px; text-anchor:middle; }
   #speechline .speech { fill:var(--sp-int); stroke:var(--card); stroke-width:1; cursor:pointer; }
+  #speechline .speech.filler { fill:var(--muted); fill-opacity:.5; }
   #speechline.filtered .speech { fill-opacity:.2; }
   #speechline.filtered .speech.hl { fill:var(--accent); fill-opacity:1; }
   #speechline .speech.selected { stroke:var(--text); stroke-width:2.5; }

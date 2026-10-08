@@ -1,5 +1,6 @@
 // The transcript: one line per utterance. Clicking a line plays from it; the selected line follows the audio.
 
+import { isFiller } from "../shared/segments.js";
 import { $, centerIn, h } from "./dom.js";
 import { clock, nameOf, speakerClasses } from "./format.js";
 import { playMoment } from "./player.js";
@@ -11,7 +12,7 @@ on(["data"], ({ data }) => {
   if (!data) return;
   const colour = speakerClasses(data);
   lines.replaceChildren(...data.utterances.map((u, i) => {
-    const li = h("li", "", h("span", "t", clock(u.start)), h("span", `spk ${colour(u.speaker)}`, nameOf(data, u.speaker)), u.text);
+    const li = h("li", isFiller(u.speaker) ? "filler" : "", h("span", "t", clock(u.start)), h("span", `spk ${colour(u.speaker)}`, nameOf(data, u.speaker)), u.text);
     li.addEventListener("click", () => playMoment(i, u.start, "transcript"));
     return li;
   }));

@@ -1,5 +1,6 @@
 // Speaker timeline: one row per speaker, time left to right, one bar per stretch of speech.
 
+import { isFiller } from "../shared/segments.js";
 import type { Utterance } from "../shared/types.js";
 import { clock } from "./format.js";
 
@@ -139,7 +140,7 @@ export function renderTimeline(svg: SVGSVGElement, labels: SVGSVGElement, uttera
   const bars: SVGRectElement[] = [];
   utterances.forEach((u, index) => {
     const name = nameOf(u.speaker);
-    const bar = el("rect", { class: "speech", x: x(u.start), y: row(name) - 6, width: Math.max(x(u.end) - x(u.start), 2),
+    const bar = el("rect", { class: isFiller(u.speaker) ? "speech filler" : "speech", x: x(u.start), y: row(name) - 6, width: Math.max(x(u.end) - x(u.start), 2),
                              height: 12, rx: 2 }, svg);
     const content: TipContent = {
       heading: `${name} · ${clock(u.start)} → ${clock(u.end)} (${Math.round(u.end - u.start)} s)`,

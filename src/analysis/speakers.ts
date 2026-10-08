@@ -3,6 +3,7 @@
 import { z } from "zod";
 
 import { ask, claudeAvailable } from "../providers/claude.js";
+import { isFiller } from "../shared/segments.js";
 import type { Analyzer } from "./analyzer.js";
 
 const HEAD = 30; // utterances from the start, where hosts introduce themselves and the guest
@@ -28,8 +29,9 @@ export const speakers: Analyzer<"names"> = {
   message: "analyzing speakers...",
   async run(utterances) {
     if (!claudeAvailable()) return { value: null, costs: [] };
-    const labels = new Set(utterances.map(u => u.speaker));
-    const picked = utterances.filter((_, i) => i < HEAD || i >= utterances.length - TAIL);
+    const spoken = utterances.filter(u => !isFiller(u.speaker)); // the intro and outro name nobody in the interview
+    const labels = new Set(spoken.map(u => u.speaker));
+    const picked = spoken.filter((_, i) => i < HEAD || i >= spoken.length - TAIL);
     const excerpt = picked.map(u => `[${u.speaker}] ${u.text.slice(0, MAX_UTTERANCE_CHARS)}`).join("\n");
     try {
       const { value, cost } = await ask({

@@ -1,6 +1,7 @@
 // How times, shares and speakers are written on the page.
 
 import { speakerOrder } from "../shared/scores.js";
+import { isFiller } from "../shared/segments.js";
 import type { TranscribeResponse } from "../shared/types.js";
 
 /** Seconds as m:ss, or h:mm:ss from an hour on. */
@@ -12,13 +13,14 @@ export function clock(seconds: number): string {
 
 export const pct = (n: number) => `${Math.round(n * 100)}%`;
 
-/** A speaker's name, or "Speaker A" while it isn't known. */
-export const nameOf = (data: TranscribeResponse | null, label: string): string => data?.names?.[label] || `Speaker ${label}`;
+/** A speaker's name, or "Speaker A" while it isn't known; "Intro" and "Outro" for those. */
+export const nameOf = (data: TranscribeResponse | null, label: string): string =>
+  isFiller(label) ? label : data?.names?.[label] || `Speaker ${label}`;
 
 const ROLE_BY_SLOT = ["interviewer", "interviewee", "other"]; // reuses the three speaker colours
 
 /** The colour class of each speaker: by order of first appearance, everyone after the second sharing the third. */
 export function speakerClasses(data: TranscribeResponse): (label: string) => string {
   const order = speakerOrder(data.utterances);
-  return label => ROLE_BY_SLOT[Math.min(order.indexOf(label), ROLE_BY_SLOT.length - 1)];
+  return label => (isFiller(label) ? "filler" : ROLE_BY_SLOT[Math.min(order.indexOf(label), ROLE_BY_SLOT.length - 1)]);
 }

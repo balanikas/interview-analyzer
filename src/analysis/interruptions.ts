@@ -5,6 +5,7 @@
 import { z } from "zod";
 
 import { ask, claudeAvailable } from "../providers/claude.js";
+import { isFiller } from "../shared/segments.js";
 import type { Interruption, Utterance } from "../shared/types.js";
 import { inBatches, type Analyzer, type Result } from "./analyzer.js";
 
@@ -27,7 +28,7 @@ export function findCandidates(utterances: Utterance[]): Candidate[] {
   const found: Candidate[] = [];
   for (let i = 1; i < utterances.length; i++) {
     const prev = utterances[i - 1], cur = utterances[i], next = utterances[i + 1];
-    if (prev.speaker === cur.speaker) continue;
+    if (prev.speaker === cur.speaker || isFiller(prev.speaker) || isFiller(cur.speaker)) continue;
     if (unfinished(prev.text) && cur.start - prev.end < MAX_GAP) found.push({ index: i, kind: "cut_off" });
     else if (words(cur.text) <= MAX_INTERJECTION_WORDS && next?.speaker === prev.speaker) found.push({ index: i, kind: "talk_over" });
   }

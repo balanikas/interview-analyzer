@@ -4,6 +4,7 @@
 // a rate, so a ten-minute segment and a three-hour podcast compare fairly.
 // Pure functions of a transcript and its analysis, shared by the server and the page: no DOM, no Node.
 
+import { isFiller } from "./segments.js";
 import type { Exchange, Interruption, TranscribeResponse, Utterance } from "./types.js";
 
 /**
@@ -37,9 +38,12 @@ export function interruptionContext(data: TranscribeResponse, i: Interruption): 
   return dodged(e) ? "dodge" : "answer";
 }
 
-/** Length of the recording in hours, for rates per hour. */
-export const hoursOf = (data: TranscribeResponse): number =>
-  (data.duration ?? Math.max(0, ...data.utterances.map(u => u.end))) / 3600;
+/** Length of the interview in hours, for rates per hour: the recording without its intro and outro. */
+export function hoursOf(data: TranscribeResponse): number {
+  const u = data.utterances, s = data.segments;
+  if (s && s.start < s.end && (s.start > 0 || s.end < u.length)) return (u[s.end - 1].end - u[s.start].start) / 3600;
+  return (data.duration ?? Math.max(0, ...u.map(u => u.end))) / 3600;
+}
 
 /** A question that leads somewhere: open-ended or challenging, not a softball and not yes/no. */
 export const thoughtful = (e: Exchange): boolean => e.question === "open" || e.question === "challenge";
@@ -51,7 +55,10 @@ export function replyIndices(data: TranscribeResponse, k: number): number[] {
   const items = data.exchanges?.items ?? [];
   const hosts = new Set(data.exchanges?.hosts ?? []);
   const stop = items[k + 1]?.index ?? data.utterances.length, out: number[] = [];
-  for (let i = items[k].index + 1; i < stop; i++) if (!hosts.has(data.utterances[i].speaker)) out.push(i);
+  for (let i = items[k].index + 1; i < stop; i++) {
+    const { speaker } = data.utterances[i];
+    if (!hosts.has(speaker) && !isFiller(speaker)) out.push(i);
+  }
   return out;
 }
 
@@ -65,9 +72,9 @@ export function exchangeEnd(data: TranscribeResponse, k: number): number {
   return u[i].end;
 }
 
-/** Diarization labels in order of first appearance. */
+/** Diarization labels in order of first appearance; the intro and outro aren't speakers. */
 export function speakerOrder(utterances: Utterance[]): string[] {
-  return [...new Set(utterances.map(u => u.speaker))];
+  return [...new Set(utterances.map(u => u.speaker).filter(s => !isFiller(s)))];
 }
 
 export interface SpeakerStats {
