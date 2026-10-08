@@ -1,10 +1,18 @@
+/** Where an audio file came from: the show and episode page for a podcast, or the pasted link. */
+export interface AudioSource {
+  show: string;
+  publisher: string;
+  title: string;
+  url: string;
+}
+
 export interface AudioFile {
   name: string;
   size: number;
   /** Length in seconds; null when it can't be read from the file. */
   duration: number | null;
-  /** Where the episode came from; null for files that weren't downloaded by download-audio.ts. */
-  source: { show: string; publisher: string; title: string; url: string } | null;
+  /** Where the episode came from; null for files put in the folder by hand. */
+  source: AudioSource | null;
   /** A transcript is already cached, so selecting the file won't send it to AssemblyAI again. */
   transcribed: boolean;
 }
@@ -40,7 +48,9 @@ export interface Exchange {
   /** Seconds at which the question starts. */
   at: number;
   /** How the host asked. */
-  question: "open" | "closed" | "follow_up" | "challenge" | "softball";
+  question: "open" | "closed" | "challenge" | "softball";
+  /** The question builds on something specific the guest just said; independent of `question`, so a follow-up can also be a challenge. */
+  followUp: boolean;
   /** How the guest responded. */
   answer: "direct" | "partial" | "pivot" | "evasive";
   /** How much concrete content the answer has: facts, figures, named examples, specific stories. */
@@ -50,8 +60,11 @@ export interface Exchange {
 }
 
 export interface Exchanges {
-  /** Diarization label of the host: the speaker who asks the most questions. Empty when nobody asks any. */
-  host: string;
+  /** Diarization labels of the hosts: the speaker who asks the most questions and anyone who asks nearly as many, or the
+   *  speakers a person marked. Empty when nobody asks any. */
+  hosts: string[];
+  /** True when a person picked the hosts, so re-analysis keeps them. */
+  manual?: boolean;
   items: Exchange[];
 }
 
@@ -73,6 +86,8 @@ export interface TranscribeResponse {
   file: string;
   duration: number | null;
   utterances: Utterance[];
+  /** AssemblyAI model that transcribed it ("universal-3-5-pro", or "universal-2" for languages that model lacks). Missing for transcripts saved before it was recorded. */
+  speechModel?: string;
   /** Real names by diarization label ("A" -> "Paul Runko"); a label without one is shown as "Speaker A". Missing until names have been worked out. */
   names?: Record<string, string>;
   /** Moments where one speaker cuts in on another; missing until they have been looked for. */
@@ -88,12 +103,27 @@ export interface RenameRequest {
   names: Record<string, string>;
 }
 
+/** The speakers a person marked as hosts; the exchanges are judged again with them. */
+export interface HostsRequest {
+  file: string;
+  hosts: string[];
+}
+
 export interface ErrorResponse {
   error: string;
 }
 
-/** One line of the NDJSON stream /api/transcribe answers with: progress messages, then the result or an error. */
-export type TranscribeEvent =
+/** POST /api/jobs: analyze a pasted link, or a file already downloaded. */
+export type JobRequest = { audio_url: string } | { file: string };
+
+/** A transcription job. Its progress is followed at /api/jobs/:id/events. */
+export interface JobInfo {
+  id: string;
+  file: string;
+}
+
+/** One server-sent event of a job: a progress message, then the result or an error. */
+export type JobEvent =
   | { log: string }
   | { done: TranscribeResponse }
   | { error: string };

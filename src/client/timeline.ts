@@ -1,8 +1,9 @@
 // Speaker timeline: one row per speaker, time left to right, one bar per stretch of speech.
 
 import type { Utterance } from "../shared/types.js";
+import { clock } from "./format.js";
 
-const ROW_H = 54;
+const ROW_H = 32;
 const LEFT = 8; // gap before time 0; the speaker names live in their own fixed column
 const LABEL_W = 130;
 const TOP = 26;
@@ -19,13 +20,6 @@ function el<K extends keyof SVGElementTagNameMap>(name: K, attrs: Attrs, parent?
 }
 
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
-
-function fmt(sec: number): string {
-  const s = Math.floor(sec);
-  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
-  const p = (n: number) => String(n).padStart(2, "0");
-  return h ? `${h}:${p(m)}:${p(r)}` : `${p(m)}:${p(r)}`;
-}
 
 interface TipContent { heading: string; text: string }
 
@@ -98,7 +92,7 @@ function drawFrame(svg: SVGSVGElement, labels: SVGSVGElement, speakers: string[]
   const tick = [30, 60, 120, 300, 600, 900, 1800, 3600].find(t => span / t <= 14) ?? 3600;
   for (let t = Math.ceil(d.start / tick) * tick; t <= d.end; t += tick) {
     el("line", { class: "grid", x1: x(t), y1: TOP, x2: x(t), y2: height - 20 }, svg);
-    el("text", { class: "axis", x: x(t), y: height - 6 }, svg).textContent = fmt(t);
+    el("text", { class: "axis", x: x(t), y: height - 6 }, svg).textContent = clock(t);
   }
   return name => TOP + speakers.indexOf(name) * ROW_H + ROW_H / 2;
 }
@@ -145,10 +139,10 @@ export function renderTimeline(svg: SVGSVGElement, labels: SVGSVGElement, uttera
   const bars: SVGRectElement[] = [];
   utterances.forEach((u, index) => {
     const name = nameOf(u.speaker);
-    const bar = el("rect", { class: "speech", x: x(u.start), y: row(name) - 9, width: Math.max(x(u.end) - x(u.start), 2),
-                             height: 18, rx: 2 }, svg);
+    const bar = el("rect", { class: "speech", x: x(u.start), y: row(name) - 6, width: Math.max(x(u.end) - x(u.start), 2),
+                             height: 12, rx: 2 }, svg);
     const content: TipContent = {
-      heading: `${name} · ${fmt(u.start)} → ${fmt(u.end)} (${Math.round(u.end - u.start)} s)`,
+      heading: `${name} · ${clock(u.start)} → ${clock(u.end)} (${Math.round(u.end - u.start)} s)`,
       text: u.text || "(no text)",
     };
     bar.addEventListener("pointerenter", ev => tip.show(content, ev.clientX, ev.clientY));
@@ -161,12 +155,13 @@ export function renderTimeline(svg: SVGSVGElement, labels: SVGSVGElement, uttera
 
   // Drawn last so it sits on top of the bars.
   const playhead = el("line", { class: "playhead", y1: TOP, y2: Number(svg.getAttribute("height")) - 20, visibility: "hidden" }, svg);
+  let lastPx: number | null = null; // where the playhead was drawn last time
   return {
     setMarkers(markers, onClick) {
       markerLayer.replaceChildren();
       markers.forEach((m, i) => {
         if (!speakers.includes(m.by) || !speakers.includes(m.interrupted)) return;
-        const px = x(m.at), y = row(m.by) - 16, yOther = row(m.interrupted);
+        const px = x(m.at), y = row(m.by) - 11, yOther = row(m.interrupted);
         el("line", { class: "cutlink", x1: px, y1: y, x2: px, y2: yOther }, markerLayer);
         const g = el("g", { class: "cut", transform: `translate(${px} ${y})` }, markerLayer);
         el("circle", { class: "cuthit", r: 9 }, g); // a bigger target than the cross itself
@@ -189,14 +184,19 @@ export function renderTimeline(svg: SVGSVGElement, labels: SVGSVGElement, uttera
     },
     setTime(seconds) {
       playhead.setAttribute("visibility", seconds === null ? "hidden" : "visible");
-      if (seconds === null) return;
+      if (seconds === null) { lastPx = null; return; }
       const px = x(Math.min(Math.max(seconds, domain.start), domain.end));
       playhead.setAttribute("x1", String(px));
       playhead.setAttribute("x2", String(px));
+      // Follow the playhead when it leaves the view by itself (playing past the edge, or a jump), but not when
+      // the user has scrolled it out of view: then the last position is out of view too, and the view stays put.
       const scroller = svg.parentElement; // scrolls only this box, never the page
-      if (scroller && (px < scroller.scrollLeft + 40 || px > scroller.scrollLeft + scroller.clientWidth - 40)) {
-        scroller.scrollLeft = Math.max(px - 80, 0);
+      if (scroller) {
+        const inView = (p: number) => p >= scroller.scrollLeft + 40 && p <= scroller.scrollLeft + scroller.clientWidth - 40;
+        const jumped = lastPx === null || Math.abs(px - lastPx) > 40;
+        if (!inView(px) && (jumped || inView(lastPx!))) scroller.scrollLeft = Math.max(px - 80, 0);
       }
+      lastPx = px;
     },
   };
 }

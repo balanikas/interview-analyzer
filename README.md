@@ -20,19 +20,25 @@ To fetch some short political interviews from public podcast RSS feeds: `npx tsx
 
 ## Layout
 
-- `src/server.ts` — Express server: `GET /api/audio`, `POST /api/transcribe` (`{ audio_url }` or `{ file }`)
-- `src/audio.ts` — safe download of an audio link into `downloads/audio/`, with `sources.json` recording where each file came from
-- `src/assemblyai.ts` — upload, transcribe with diarization, poll; lists the audio folder
-- `src/net.ts` — private-address check and the HTTP error type
-- `src/download-audio.ts` — script that downloads episodes from podcast RSS feeds
-- `src/client/main.ts` — browser code, compiled to `static/main.js`
-- `src/client/timeline.ts` — speaker-timeline SVG
-- `src/shared/types.d.ts` — request/response types shared by both
-- `static/index.html` — page markup and styles
+Server (`src/`):
+- `server.ts` — routes only: `GET /api/audio`, `POST /api/jobs` (`{ audio_url }` or `{ file }`) → `{ id }`, `GET /api/jobs` (running jobs), `GET /api/jobs/:id/events` (server-sent progress, then the result), `POST /api/speakers`, `POST /api/hosts`. Request bodies are checked with zod.
+- `config.ts` — settings from the environment / `.env`, and the data folders
+- `jobs.ts` — runs a job (download → transcribe → analyze) apart from any request; saved in `cache/jobs/` so a restart resumes it
+- `fetch-audio.ts` — safe download of an audio link (private addresses refused, 500 MB cap)
+- `providers/assemblyai.ts` — AssemblyAI upload / start / poll, nothing else
+- `providers/claude.ts` — one `ask()` for structured answers: a zod schema in, a typed value and its cost out
+- `analysis/` — the analyzers (`speakers`, `interruptions`, `exchanges`), each with its own version, and `pipeline.ts`, which runs whichever are missing or out of date
+- `store/` — the files on disk: `library.ts` (audio + `library.json`), `transcripts.ts` (raw + analysis caches)
+- `download-audio.ts` — script that downloads episodes from podcast RSS feeds, through the same downloader and library
+
+Shared (`src/shared/`): `types.d.ts` (API types) and `scores.ts` (scorecard rules and speaker stats — pure functions).
+
+Page (`src/client/`, compiled to `static/client/`): `store.ts` holds the page state; each panel (`transcript`, `timeline-view`, `stats`, `interruptions`, `exchanges`, `picker`, `player`) subscribes to what it shows. `analyze.ts` starts and follows jobs; `timeline.ts` draws the SVG.
 
 ## Notes
 
-- Audio is saved in `downloads/audio/` under a name made from the link's host, file name and a hash of the full link, so the same link is never downloaded twice. Delete a file to fetch it again.
-- Transcripts are cached in `cache/transcripts/` as one JSON file per audio file (times in seconds). Delete one to transcribe again.
-- Speakers are AssemblyAI's labels ("Speaker A", "Speaker B"), not names.
+- Audio is saved in `downloads/audio/`; `library.json` there records each file's source and length. A pasted link's file name is made from its host, file name and a hash of the full link, so the same link is never downloaded twice. Delete a file to fetch it again.
+- AssemblyAI's transcripts are cached in `cache/assemblyai/`, the analysis in `cache/analysis/`, one JSON file per audio file. Delete the first to transcribe again, the second to analyze again. Bumping an analyzer's `version` redoes just that analysis the next time a transcript is opened.
+- A job that has sent its audio to AssemblyAI records the transcript id first, so neither a restart nor a retry pays for it twice. Reloading the page follows the running job again.
+- Speakers are named from what is said when `ANTHROPIC_API_KEY` is set (`ANTHROPIC_MODEL` picks the model); otherwise they keep AssemblyAI's labels ("Speaker A").
 - Links to internal/private addresses are refused; files over 500 MB are refused.

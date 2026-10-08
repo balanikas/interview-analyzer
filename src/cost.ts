@@ -11,8 +11,9 @@ const CLAUDE_RATES: Record<string, [number, number, number, number]> = {
 };
 const DEFAULT_RATES = CLAUDE_RATES["claude-sonnet-5-5"];
 
-// AssemblyAI list prices per audio hour: Universal transcription plus the speaker labels and language detection add-ons.
-const ASSEMBLYAI_PER_HOUR = { transcription: 0.15, speaker_labels: 0.02, language_detection: 0.02 };
+// AssemblyAI list prices per audio hour: transcription by model, plus the speaker labels and language detection add-ons.
+const ASSEMBLYAI_MODEL_PER_HOUR: Record<string, number> = { "universal-3-5-pro": 0.21, "universal-2": 0.15 };
+const ASSEMBLYAI_ADDONS_PER_HOUR = { speaker_labels: 0.02, language_detection: 0.02 };
 
 interface Usage { input_tokens: number; output_tokens: number; cache_creation_input_tokens?: number | null; cache_read_input_tokens?: number | null }
 
@@ -24,8 +25,10 @@ export function claudeCost(label: string, model: string, usage: Usage): CostItem
   return { service: "Claude", label, usd, estimated: !known };
 }
 
-export function assemblyAiCost(durationSeconds: number): CostItem {
-  const perHour = Object.values(ASSEMBLYAI_PER_HOUR).reduce((a, b) => a + b, 0);
+// A model that isn't known (older transcripts didn't record one) is priced as Universal-2, the earlier default.
+export function assemblyAiCost(durationSeconds: number, model?: string): CostItem {
+  const perHour = (ASSEMBLYAI_MODEL_PER_HOUR[model ?? ""] ?? ASSEMBLYAI_MODEL_PER_HOUR["universal-2"]) +
+    Object.values(ASSEMBLYAI_ADDONS_PER_HOUR).reduce((a, b) => a + b, 0);
   return { service: "AssemblyAI", label: "transcription", usd: (durationSeconds / 3600) * perHour, estimated: true };
 }
 

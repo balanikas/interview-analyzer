@@ -2,15 +2,15 @@
 // evidence is indirect: candidates are turns that end unfinished right before a speaker change (cut off), and short
 // interjections inside someone else's turn (talk over). Claude then judges each candidate from its context.
 
-import Anthropic from "@anthropic-ai/sdk";
+import { z } from "zod";
 
-import { claudeCost } from "./cost.js";
-import type { CostItem, Interruption, Utterance } from "./shared/types.js";
+import { ask, claudeAvailable } from "../providers/claude.js";
+import type { Interruption, Utterance } from "../shared/types.js";
+import { inBatches, type Analyzer, type Result } from "./analyzer.js";
 
-const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5-5";
 const MAX_GAP = 0.5; // seconds between the end of one turn and the start of the next for it to count as a cut-in
 const MAX_INTERJECTION_WORDS = 3;
-const MAX_CANDIDATES = 250; // keeps one request small; the first ones in the recording are judged
+const BATCH = 150; // candidates per request, so one request stays small; batches run in parallel and all are judged
 
 interface Candidate {
   index: number;
@@ -31,7 +31,7 @@ export function findCandidates(utterances: Utterance[]): Candidate[] {
     if (unfinished(prev.text) && cur.start - prev.end < MAX_GAP) found.push({ index: i, kind: "cut_off" });
     else if (words(cur.text) <= MAX_INTERJECTION_WORDS && next?.speaker === prev.speaker) found.push({ index: i, kind: "talk_over" });
   }
-  return found.slice(0, MAX_CANDIDATES);
+  return found;
 }
 
 const SYSTEM_PROMPT = `You judge candidate interruptions in an interview or podcast transcript. Each candidate shows \
@@ -43,37 +43,19 @@ It is NOT an interruption when it is a backchannel ("yeah", "right", "mm-hm", "s
 carry on, a short agreement or laugh that doesn't take the floor, or an ordinary hand-over after the first speaker \
 finished. A dash at the end of a turn is a strong sign of being cut off, but check that the words that follow really \
 break in rather than continue the sentence.
-Write each reason in at most 15 words, without naming the speakers (say "the second speaker" if needed).
-Report your answer by calling the report_interruptions tool, with one verdict for every candidate id.`;
+Write each reason in at most 15 words, without naming the speakers: call them "the first speaker" and "the second \
+speaker" (the page puts their names in).
+Give one verdict for every candidate id.`;
 
-const TOOL: Anthropic.Tool = {
-  name: "report_interruptions",
-  description: "Report whether each candidate is a real interruption.",
-  input_schema: {
-    type: "object",
-    properties: {
-      verdicts: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: { id: { type: "integer" }, interruption: { type: "boolean" }, reason: { type: "string" } },
-          required: ["id", "interruption", "reason"],
-        },
-      },
-    },
-    required: ["verdicts"],
-  },
-};
+const Reply = z.object({
+  verdicts: z.array(z.object({ id: z.number().int(), interruption: z.boolean(), reason: z.string() })),
+});
 
 const tail = (text: string, n: number) => (text.length > n ? `…${text.slice(-n)}` : text);
 const head = (text: string, n: number) => (text.length > n ? `${text.slice(0, n)}…` : text);
 
-/** Interruptions in a transcript; null when they couldn't be judged (no API key, API error), so a later view can retry. */
-export async function detectInterruptions(utterances: Utterance[], costs: CostItem[]): Promise<Interruption[] | null> {
-  const candidates = findCandidates(utterances);
-  if (!candidates.length) return [];
-  if (!process.env.ANTHROPIC_API_KEY) return null;
-
+/** One request judging a batch of candidates. */
+async function judge(utterances: Utterance[], candidates: Candidate[]): Promise<Result<Interruption[]>> {
   const blocks = candidates.map(({ index, kind }, n) => {
     const prev = utterances[index - 1], cur = utterances[index], next = utterances[index + 1];
     const gap = (cur.start - prev.end).toFixed(2);
@@ -81,31 +63,32 @@ export async function detectInterruptions(utterances: Utterance[], costs: CostIt
       `${prev.speaker}: ${tail(prev.text, 220)}\n${cur.speaker}: ${head(cur.text, 220)}` +
       (next ? `\n${next.speaker}: ${head(next.text, 120)}` : "");
   });
-  try {
-    const resp = await new Anthropic().messages.create({
-      model: MODEL,
-      max_tokens: 8192,
-      system: SYSTEM_PROMPT,
-      tools: [TOOL],
-      messages: [{ role: "user", content: blocks.join("\n\n") }],
+  const { value, cost } = await ask({
+    label: "interruptions", system: SYSTEM_PROMPT, schema: Reply, maxTokens: 8192, content: blocks.join("\n\n"),
+  });
+  if (!value) return { value: null, costs: [cost] };
+  const found: Interruption[] = [];
+  for (const v of value.verdicts) {
+    const c = candidates[v.id];
+    if (!c || !v.interruption) continue;
+    const cur = utterances[c.index];
+    found.push({
+      index: c.index, by: cur.speaker, interrupted: utterances[c.index - 1].speaker, at: cur.start, kind: c.kind,
+      reason: v.reason.trim().slice(0, 200),
     });
-    costs.push(claudeCost("interruptions", MODEL, resp.usage));
-    const block = resp.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-    const verdicts = (block?.input as { verdicts?: { id?: unknown; interruption?: unknown; reason?: unknown }[] } | undefined)?.verdicts;
-    if (!Array.isArray(verdicts)) return null;
-    const found: Interruption[] = [];
-    for (const v of verdicts) {
-      const c = typeof v.id === "number" ? candidates[v.id] : undefined;
-      if (!c || v.interruption !== true) continue;
-      const cur = utterances[c.index];
-      found.push({
-        index: c.index, by: cur.speaker, interrupted: utterances[c.index - 1].speaker, at: cur.start, kind: c.kind,
-        reason: typeof v.reason === "string" ? v.reason.trim().slice(0, 200) : "",
-      });
-    }
-    return found.sort((a, b) => a.index - b.index);
-  } catch (e) {
-    console.error("Couldn't judge interruptions:", e instanceof Error ? e.message : e);
-    return null;
   }
+  return { value: found, costs: [cost] };
 }
+
+export const interruptions: Analyzer<"interruptions"> = {
+  key: "interruptions",
+  version: 2, // 2: every candidate judged
+  message: "finding interruptions...",
+  async run(utterances) {
+    const candidates = findCandidates(utterances);
+    if (!candidates.length) return { value: [], costs: [] };
+    if (!claudeAvailable()) return { value: null, costs: [] };
+    const result = await inBatches(candidates, BATCH, batch => judge(utterances, batch), "interruptions");
+    return { ...result, value: result.value?.sort((a, b) => a.index - b.index) ?? null };
+  },
+};
