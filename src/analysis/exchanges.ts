@@ -11,7 +11,7 @@ import { isFiller } from "../shared/segments.js";
 import type { Exchange, Exchanges, Utterance } from "../shared/types.js";
 import { inBatches, type Analyzer, type Result } from "./analyzer.js";
 
-const BATCH = 40; // exchanges per request; batches run in parallel
+const BATCH = 15; // exchanges per request (each shows up to ~900 words); batches run in parallel
 const MAX_EXCHANGES = 400; // bounds the cost of a very long recording
 const MIN_QUESTION_WORDS = 4; // shorter host turns ("Right?", "Mm-hm.") are backchannels
 const MIN_ANSWER_WORDS = 3;
@@ -21,6 +21,13 @@ const MIN_STATEMENT_ANSWER_WORDS = 15;
 // least a few: guests in heated interviews ask questions back, and those must not make them hosts.
 const CO_HOST_SHARE = 0.5;
 const MIN_CO_HOST_QUESTIONS = 3;
+// How much of each turn Claude sees, in words. Answers are shown whole up to a few minutes of speech, so a detour or a
+// pivot in the middle is judged; past that the middle is left out. The previous answer is long enough to tell whether a
+// question builds on something said earlier in it, not only in its last sentence.
+const QUESTION_WORDS = 150;
+const ANSWER_HEAD_WORDS = 450;
+const ANSWER_TAIL_WORDS = 150;
+const PREVIOUS_WORDS = 150;
 
 const QUESTIONS = ["open", "closed", "challenge", "softball"] as const satisfies readonly Exchange["question"][];
 const ANSWERS = ["direct", "partial", "pivot", "evasive"] as const satisfies readonly Exchange["answer"][];
@@ -30,8 +37,13 @@ interface Turn { speaker: string; index: number; start: number; text: string }
 interface Pair { question: Turn; answer: Turn; before: Turn | null }
 
 const words = (text: string) => text.match(/\S+/g)?.length ?? 0;
-const tail = (text: string, n: number) => (text.length > n ? `…${text.slice(-n)}` : text);
-const head = (text: string, n: number) => (text.length > n ? `${text.slice(0, n)}…` : text);
+
+/** The text with only its first `first` and last `last` words, the rest marked by "…". */
+function clip(text: string, first: number, last: number): string {
+  const w = text.match(/\S+/g) ?? [];
+  if (w.length <= first + last) return text;
+  return [...(first ? [...w.slice(0, first), "…"] : ["…"]), ...w.slice(w.length - last)].join(" ");
+}
 
 /**
  * Consecutive utterances by one speaker joined into a single turn (the transcriber often splits one turn in several).
@@ -80,8 +92,8 @@ export function findExchanges(utterances: Utterance[], chosen?: string[]): { hos
 }
 
 const SYSTEM_PROMPT = `You judge the exchanges of an interview or podcast. Each exchange is a host's turn and the \
-guest's reply, with the end of the guest's previous answer for context. The host's turn may be a question or a \
-statement that presses the guest. Judge from the text only; never use what you know about the people. For every \
+guest's reply, with the guest's previous answer for context. Long turns are shortened, the left-out words marked \
+"…". The host's turn may be a question or a statement that presses the guest. Judge from the text only; never use what you know about the people. For every \
 exchange give six things.
 
 prompt - true when the host's turn asks for or presses for a reply, including a statement that challenges, corrects \
@@ -123,8 +135,8 @@ const Reply = z.object({
 });
 
 const describe = ({ question, answer, before }: Pair, n: number) =>
-  `#${n}\n` + (before ? `(previous answer ended: ${tail(before.text, 160)})\n` : "") +
-  `HOST: ${tail(question.text, 450)}\nGUEST: ${head(answer.text, 450)}${answer.text.length > 450 ? ` … ${tail(answer.text, 200)}` : ""}`;
+  `#${n}\n` + (before ? `(previous answer: ${clip(before.text, 0, PREVIOUS_WORDS)})\n` : "") +
+  `HOST: ${clip(question.text, 0, QUESTION_WORDS)}\nGUEST: ${clip(answer.text, ANSWER_HEAD_WORDS, ANSWER_TAIL_WORDS)}`;
 
 async function judge(pairs: Pair[]): Promise<Result<Exchange[]>> {
   const { value, cost } = await ask({
@@ -156,7 +168,9 @@ export async function judgeExchanges(utterances: Utterance[], chosen?: string[])
 
 export const exchanges: Analyzer<"exchanges"> = {
   key: "exchanges",
-  version: 3, // 2: follow-up is a flag next to the question type, several hosts; 3: host statements count as prompts
+  // 2: follow-up is a flag next to the question type, several hosts; 3: host statements count as prompts; 4: answers
+  // and the previous answer shown nearly whole
+  version: 4,
   message: "finding exchanges and tagging...",
   // Hosts a person picked outlive re-analysis.
   run: (utterances, prior) => judgeExchanges(utterances, prior.exchanges?.manual ? prior.exchanges.hosts : undefined),

@@ -36,7 +36,7 @@ export function findCandidates(utterances: Utterance[]): Candidate[] {
 }
 
 const SYSTEM_PROMPT = `You judge candidate interruptions in an interview or podcast transcript. Each candidate shows \
-the end of one speaker's turn, the words of the speaker who comes in next, and what follows. Speaker labels are \
+what the first speaker was replying to (when there is something), the end of their turn, the words of the speaker who comes in next, and what follows. Speaker labels are \
 letters assigned by diarization. For each candidate decide whether the second speaker interrupts the first.
 It IS an interruption when the second speaker cuts in while the first is mid-thought or mid-sentence, takes the floor \
 before the first has made their point, or talks over them with more than a polite acknowledgement.
@@ -44,24 +44,43 @@ It is NOT an interruption when it is a backchannel ("yeah", "right", "mm-hm", "s
 carry on, a short agreement or laugh that doesn't take the floor, or an ordinary hand-over after the first speaker \
 finished. A dash at the end of a turn is a strong sign of being cut off, but check that the words that follow really \
 break in rather than continue the sentence.
+Also give during: what the first speaker was doing in their turn up to the cut, relative to what they were replying to \
+(shown first, when there is one). Judge it only from the first speaker's words before the cut, never from what the \
+second speaker says about them.
+  answer: replying to what they were asked, fully or in part
+  dodge: turning to a different question or their own talking points, or saying nothing checkable in reply
+  other: nothing to answer (small talk, they were asking or making their own point), or it can't be told
 Write each reason in at most 15 words, without naming the speakers: call them "the first speaker" and "the second \
 speaker" (the page puts their names in).
 Give one verdict for every candidate id.`;
 
 const Reply = z.object({
-  verdicts: z.array(z.object({ id: z.number().int(), interruption: z.boolean(), reason: z.string() })),
+  verdicts: z.array(z.object({
+    id: z.number().int(), interruption: z.boolean(), during: z.enum(["answer", "dodge", "other"]), reason: z.string(),
+  })),
 });
 
 const tail = (text: string, n: number) => (text.length > n ? `…${text.slice(-n)}` : text);
 const head = (text: string, n: number) => (text.length > n ? `${text.slice(0, n)}…` : text);
+
+/** The whole turn that ends with utterance `end` - 1: that utterance and the ones before it by the same speaker. */
+function turnUpTo(utterances: Utterance[], end: number): { start: number; text: string } {
+  let start = end - 1;
+  while (start > 0 && utterances[start - 1].speaker === utterances[end - 1].speaker) start--;
+  return { start, text: utterances.slice(start, end).map(u => u.text).join(" ") };
+}
 
 /** One request judging a batch of candidates. */
 async function judge(utterances: Utterance[], candidates: Candidate[]): Promise<Result<Interruption[]>> {
   const blocks = candidates.map(({ index, kind }, n) => {
     const prev = utterances[index - 1], cur = utterances[index], next = utterances[index + 1];
     const gap = (cur.start - prev.end).toFixed(2);
+    // The interrupted turn so far, and the turn it replies to, so `during` can be judged from the words before the cut.
+    const cut = turnUpTo(utterances, index);
+    const asked = cut.start > 0 && !isFiller(utterances[cut.start - 1].speaker) ? turnUpTo(utterances, cut.start) : null;
     return `#${n} (${kind === "cut_off" ? "previous turn ends unfinished" : "short interjection"}, gap ${gap}s)\n` +
-      `${prev.speaker}: ${tail(prev.text, 220)}\n${cur.speaker}: ${head(cur.text, 220)}` +
+      (asked ? `(replying to) ${utterances[cut.start - 1].speaker}: ${tail(asked.text, 300)}\n` : "") +
+      `${prev.speaker}: ${tail(cut.text, 600)}\n${cur.speaker}: ${head(cur.text, 220)}` +
       (next ? `\n${next.speaker}: ${head(next.text, 120)}` : "");
   });
   const { value, cost } = await ask({
@@ -75,7 +94,7 @@ async function judge(utterances: Utterance[], candidates: Candidate[]): Promise<
     const cur = utterances[c.index];
     found.push({
       index: c.index, by: cur.speaker, interrupted: utterances[c.index - 1].speaker, at: cur.start, kind: c.kind,
-      reason: v.reason.trim().slice(0, 200),
+      during: v.during, reason: v.reason.trim().slice(0, 200),
     });
   }
   return { value: found, costs: [cost] };
@@ -83,7 +102,7 @@ async function judge(utterances: Utterance[], candidates: Candidate[]): Promise<
 
 export const interruptions: Analyzer<"interruptions"> = {
   key: "interruptions",
-  version: 2, // 2: every candidate judged
+  version: 3, // 2: every candidate judged; 3: what the interrupted speaker was doing, judged before the cut
   message: "finding interruptions...",
   async run(utterances) {
     const candidates = findCandidates(utterances);

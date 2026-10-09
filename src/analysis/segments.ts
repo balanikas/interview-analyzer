@@ -48,7 +48,7 @@ export const segments: Analyzer<"segments"> = {
       (k > 0 && shown[k - 1].i !== i - 1 ? "…\n" : "") + `#${i} [${u.speaker}] ${u.text.slice(0, MAX_UTTERANCE_CHARS)}`);
     try {
       const { value, cost } = await ask({
-        label: "intro and outro", system: SYSTEM_PROMPT, schema: Reply, maxTokens: 256,
+        label: "intro and outro", system: SYSTEM_PROMPT, schema: Reply, maxTokens: 4096, // room to think first; 256 ran out mid-thought, leaving no answer
         content: `Talk time: ${shares(utterances)}\n\n${lines.join("\n")}`,
       });
       if (!value) return { value: null, costs: [cost] };

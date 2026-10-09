@@ -16,7 +16,7 @@
            background:#f6f8fb; border-bottom:1px solid var(--border); }
   header form { flex:1 1 320px; max-width:560px; }
   /* The page itself never scrolls: main fills the window below the header, and each section scrolls inside itself. */
-  main { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; overflow:hidden; padding:16px 20px; }
+  main { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; overflow:hidden; padding:16px 0; }
   h1 { font-size:1.25rem; margin:0; }
   .row { display:flex; gap:8px; }
   input { flex:1; min-width:0; padding:8px 10px; font:inherit; color:var(--text); background:var(--card);
@@ -128,7 +128,8 @@
   #infotip .kind.guest, .score .kind.guest { color:var(--muted); }
   /* A figure on one line: its value, then the labels it counts as the lists draw them. */
   .score .labels { white-space:nowrap; }
-  .score .or { font-size:.7rem; margin-right:4px; }
+  .score .word { font-size:.7rem; margin-right:4px; }
+  .score .count { font-size:.7rem; font-variant-numeric:tabular-nums; }
   .score b { min-width:3.2em; font-size:1rem; color:var(--text); font-variant-numeric:tabular-nums; }
   #exchanges { list-style:none; margin:8px 0 0; padding:0; border-top:1px solid var(--border); max-height:320px; overflow:auto; }
   #exchanges li { padding:6px 16px; font-size:.88rem; cursor:pointer; border-bottom:1px solid var(--border); }
@@ -152,7 +153,8 @@
   #speechline { display:block; }
   #speechline .band, #speechlabels .band { fill:var(--muted); fill-opacity:.07; }
   #speechlabels .who { fill:var(--text); font-size:12px; font-weight:600; dominant-baseline:central; }
-  .cols { flex:1; min-height:0; display:grid; grid-template-columns:280px minmax(0, 1fr) 380px;
+  /* The metrics column is wide enough for the longest figure on one line. */
+  .cols { flex:1; min-height:0; display:grid; grid-template-columns:440px minmax(0, 1fr) 380px;
           grid-template-rows:minmax(0, 1fr); gap:16px; }
   /* Each column is as tall as main. Its sections share that height, and their lists and the transcript scroll inside. */
   .colleft, .colmain, .colside { min-width:0; min-height:0; display:flex; flex-direction:column; gap:16px; overflow:auto; }
@@ -228,7 +230,7 @@
     <div id="result" class="cols" hidden>
       <div class="colleft">
       <div class="treebox" id="exbox" hidden>
-        <h2>Question and answer metrics<span class="info" tabindex="0" data-tip="Each host question is judged on how it was asked and how the guest answered it. The host and the guest are scored separately, so an evasive guest doesn't count against a good host. Judged automatically from the text alone, so treat it as an estimate. Click a figure to highlight those moments on the timeline.">ⓘ</span></h2>
+        <h2>Question and answer metrics<span class="info" tabindex="0" data-tip="Each host question is judged on how it was asked and how the guest answered it. The host and the guest are scored separately, so an evasive guest doesn't count against a good host, and the guest's answers are scored by the kind of question they reply to. Shares of fewer than 10 exchanges show the count only. Judged automatically from the text alone, so treat it as an estimate. Click a figure to highlight those moments on the timeline.">ⓘ</span></h2>
         <h3 class="scorehead">Host</h3>
         <div class="score" id="hostscore"></div>
         <h3 class="scorehead">Guest</h3>

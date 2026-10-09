@@ -1,7 +1,7 @@
 // Questions and answers: a host score and a guest score, then every exchange with its verdicts. Clicking a figure
 // highlights its moments on the timeline; clicking an exchange plays from its question.
 
-import { dodged, exchangeContaining, exchangeEnd, hoursOf, interruptionContext, replyIndices, thoughtful, type InterruptionContext } from "../shared/scores.js";
+import { dodged, exchangeContaining, exchangeEnd, hoursOf, interruptionContext, replyIndices, type InterruptionContext } from "../shared/scores.js";
 import type { Exchange, TranscribeResponse } from "../shared/types.js";
 import { $, centerIn, h } from "./dom.js";
 import { clock, pct } from "./format.js";
@@ -10,11 +10,15 @@ import { on, set, state } from "./store.js";
 
 // A scorecard figure: its value, and the utterances it highlights on the timeline when clicked. It is headed by the
 // labels the Exchanges and Interruptions lists use for the same thing, styled the same way.
-interface Figure { label: string; tags: Label[]; tip: string; value: string; indices: number[] }
+// `count` says how many exchanges a share rests on.
+interface Figure { label: string; tags: Label[]; tip: string; value: string; count?: string; indices: number[] }
 
 // A label as the lists draw it: an exchange tag, an interruption's context, or a word joining two of them.
-type Label = { tag: string; cls?: string } | { kind: string; cls: InterruptionContext } | { or: true };
-const OR: Label = { or: true };
+type Label = { tag: string; cls?: string } | { kind: string; cls: InterruptionContext } | { word: string };
+const OR: Label = { word: "or" }, TO: Label = { word: "to" };
+
+// A share of fewer exchanges than this is shown as a count only: one verdict would move a percentage too far.
+const MIN_SHARE = 10;
 
 function hostFigures(data: TranscribeResponse, items: Exchange[]): Figure[] {
   const hours = hoursOf(data);
@@ -28,26 +32,38 @@ function hostFigures(data: TranscribeResponse, items: Exchange[]): Figure[] {
     };
   };
   return [
-    share(data, items, "Follow-up questions", [{ tag: "follow-up", cls: "good" }], "Questions that build on something specific the guest just said.", e => e.followUp, false),
-    share(data, items, "Challenging follow-ups", [{ tag: "challenge", cls: "good" }, { tag: "follow-up", cls: "good" }], "Follow-ups that also put an objection or inconvenient fact to the guest.", e => e.followUp && e.question === "challenge", false),
-    share(data, items, "Challenging questions", [{ tag: "challenge", cls: "good" }], "Questions that put an objection or inconvenient fact to the guest.", e => e.question === "challenge", false),
-    share(data, items, "Thoughtful questions", [{ tag: "open" }, OR, { tag: "challenge", cls: "good" }], "Open or challenging questions: not softballs, not yes/no.", thoughtful, false),
+    share(data, items, "Follow-up questions", [{ tag: "follow-up", cls: "good" }], "Questions that build on something specific the guest just said.", all, e => e.followUp, false),
+    share(data, items, "Challenging questions", [{ tag: "challenge", cls: "good" }], "Questions that put an objection or inconvenient fact to the guest.", all, challenge, false),
     perHour("Cut into answers", "into an answer", "A host cut in while the guest was answering the question. Lower is better.", "answer"),
     perHour("Pressed a dodge", "pressing a dodge", "A host cut in while the guest pivoted or evaded. Pressure, not counted against the host.", "dodge"),
   ];
 }
 
+// The guest is scored by the kind of question answered: nearly anyone answers a softball directly and at length, so
+// counting those would credit the guest for the host's easy questions, and blame them for the host's hard ones.
+const all = () => true;
+const challenge = (e: Exchange) => e.question === "challenge";
+const plain = (e: Exchange) => e.question === "open" || e.question === "closed";
+const opening = (e: Exchange) => e.question === "open" || e.question === "challenge";
+const direct = (e: Exchange) => e.answer === "direct";
+
 const guestFigures = (data: TranscribeResponse, items: Exchange[]): Figure[] => [
-  share(data, items, "Direct answers", [{ tag: "direct" }], "Answers that address the question asked.", e => e.answer === "direct", true),
-  share(data, items, "Non-answers", [{ tag: "pivot", cls: "bad" }, OR, { tag: "evasive", cls: "bad" }], "Answers that pivot to another question or say nothing checkable. Lower is better.", dodged, true),
-  share(data, items, "High-density answers", [{ tag: "high density" }], "Answers with plenty of facts, figures, examples or reasoning.", e => e.density === "high", true),
+  share(data, items, "Direct answers to challenges", [{ tag: "direct" }, TO, { tag: "challenge", cls: "good" }], "Challenges the guest answered directly: where answering costs something.", challenge, direct, true),
+  share(data, items, "Non-answers to challenges", [{ tag: "pivot", cls: "bad" }, OR, { tag: "evasive", cls: "bad" }, TO, { tag: "challenge", cls: "good" }], "Challenges the guest pivoted away from or said nothing checkable in reply to. Lower is better.", challenge, dodged, true),
+  share(data, items, "Direct answers to other questions", [{ tag: "direct" }, TO, { tag: "open" }, OR, { tag: "closed" }], "Open and closed questions the guest answered directly. Softballs are left out.", plain, direct, true),
+  share(data, items, "High-density answers", [{ tag: "high density" }, TO, { tag: "open" }, OR, { tag: "challenge", cls: "good" }], "Answers to open and challenging questions with plenty of facts, figures, examples or reasoning. Softballs and yes/no questions are left out: they call for rich or short answers whatever the guest.", opening, e => e.density === "high", true),
 ];
 
-// A share of the exchanges: the questions themselves, or the guest's replies, are highlighted.
-function share(data: TranscribeResponse, items: Exchange[], label: string, tags: Label[], tip: string, test: (e: Exchange) => boolean, reply: boolean): Figure {
-  const hits = items.flatMap((e, k) => (test(e) ? [{ e, k }] : []));
+// A share of the exchanges `of` picks: the questions themselves, or the guest's replies, are highlighted.
+function share(data: TranscribeResponse, items: Exchange[], label: string, tags: Label[], tip: string,
+               of: (e: Exchange) => boolean, test: (e: Exchange) => boolean, reply: boolean): Figure {
+  const base = items.flatMap((e, k) => (of(e) ? [{ e, k }] : []));
+  const hits = base.filter(({ e }) => test(e));
+  const count = `${hits.length}/${base.length}`;
   return {
-    label, tags, tip, value: pct(hits.length / items.length),
+    label, tags, tip: base.length < MIN_SHARE ? `${tip} Only ${base.length} such exchanges: too few for a percentage.` : tip,
+    value: !base.length ? "–" : base.length < MIN_SHARE ? count : pct(hits.length / base.length),
+    ...(base.length >= MIN_SHARE && { count }),
     indices: hits.flatMap(({ e, k }) => (reply ? replyIndices(data, k) : [e.index])),
   };
 }
@@ -57,8 +73,8 @@ const figures = new Map<string, Figure>();
 function renderScore(id: string, list: Figure[]): void {
   for (const f of list) figures.set(f.label, f);
   $(id).replaceChildren(...list.map(f => {
-    const labels = f.tags.map(t => "or" in t ? h("span", "or", "or") : "kind" in t ? h("span", `kind ${t.cls}`, t.kind) : tag(t.tag, t.cls));
-    const button = h("button", "", h("b", "", f.value), h("span", "labels", ...labels));
+    const labels = f.tags.map(t => "word" in t ? h("span", "word", t.word) : "kind" in t ? h("span", `kind ${t.cls}`, t.kind) : tag(t.tag, t.cls));
+    const button = h("button", "", h("b", "", f.value), h("span", "labels", ...labels), ...(f.count ? [h("span", "count", f.count)] : []));
     button.type = "button";
     button.dataset.metric = f.label;
     button.title = `${f.label}: ${f.tip} Click to highlight on the timeline.`;
@@ -124,7 +140,6 @@ const LEGEND: { title: string; el: "tag" | "kind"; terms: [string, string, strin
     ["challenge", "Puts an objection, contradiction or inconvenient fact to the guest.", "good"],
     ["softball", "Invites the guest to say what they already want to say, or flatters them."],
     ["follow-up", "Builds on something specific the guest just said. Marked on top of the type above, so a question can be a challenging follow-up.", "good"],
-    ["thoughtful", "Open or challenge: not a softball, and not answerable with yes/no."],
   ] },
   { title: "How the guest answered", el: "tag", terms: [
     ["direct", "Addresses the question that was asked."],
@@ -138,8 +153,8 @@ const LEGEND: { title: string; el: "tag" | "kind"; terms: [string, string, strin
     ["low density", "Mostly generalities, repetition or filler, however long the answer is."],
   ] },
   { title: "What an interruption cut into", el: "kind", terms: [
-    ["into an answer", "A host cut in while the guest was answering the question (direct or partial answer). Counts against the host.", "answer"],
-    ["pressing a dodge", "A host cut in while the guest was pivoting or evading. Pressure, not counted against the host.", "dodge"],
+    ["into an answer", "A host cut in while the guest was answering what they were asked, judged from the guest's words before the cut. Counts against the host.", "answer"],
+    ["pressing a dodge", "A host cut in while the guest was pivoting or evading, judged from the guest's words before the cut. Pressure, not counted against the host.", "dodge"],
     ["guest on host", "The guest cut in on a host.", "guest"],
   ] },
 ];

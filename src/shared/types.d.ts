@@ -37,6 +37,11 @@ export interface Interruption {
   at: number;
   /** cut_off: the other speaker's turn ends unfinished. talk_over: a short interjection into their turn. */
   kind: "cut_off" | "talk_over";
+  /**
+   * What the interrupted speaker was doing before the cut, judged from their words up to it: answering what they were
+   * asked, dodging it, or neither. Missing for interruptions judged before it was recorded.
+   */
+  during?: "answer" | "dodge" | "other";
   /** Claude's one-line reason, written without names. */
   reason: string;
 }

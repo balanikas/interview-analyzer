@@ -1,7 +1,9 @@
-// The interview judged against the standard in two separate scores: how the host asks (follow-ups, challenges,
-// thoughtful questions, not cutting into answers) and how the guest answers (directly, with substance). Kept apart so
-// an evasive guest doesn't count against a good host, or a soft host get credit for a forthcoming guest. Everything is
-// a rate, so a ten-minute segment and a three-hour podcast compare fairly.
+// The interview judged against the standard in two separate scores: how the host asks (follow-ups, challenges, not
+// cutting into answers) and how the guest answers (directly, with substance). Kept apart so an evasive guest doesn't
+// count against a good host, or a soft host get credit for a forthcoming guest: the guest's answers are scored by the
+// kind of question they reply to, as nearly anyone answers a softball well. Everything is a rate, so a ten-minute
+// segment and a three-hour podcast compare on the same scale (a short one is noisier, and its figures say how few
+// exchanges they rest on).
 // Pure functions of a transcript and its analysis, shared by the server and the page: no DOM, no Node.
 
 import { isFiller } from "./segments.js";
@@ -10,16 +12,9 @@ import type { Exchange, Interruption, TranscribeResponse, Utterance } from "./ty
 /**
  * What an interruption cut into. answer: a host cut into a guest's real answer (counts against the host). dodge: a host
  * pressed a guest who was pivoting or evading (pressure, not counted against them). guest: a guest cut in on a host.
- * other: anything else, such as two guests, or before the first question.
+ * other: anything else, such as two guests, small talk, or interruptions judged before `during` was recorded.
  */
 export type InterruptionContext = "answer" | "dodge" | "guest" | "other";
-
-/** The exchange whose reply an utterance belongs to: the last question before it, up to the next question. */
-function exchangeAnswering(items: Exchange[], index: number): Exchange | undefined {
-  let found: Exchange | undefined;
-  for (const e of items) if (e.index < index) found = e; else break;
-  return found;
-}
 
 /** Position in `items` of the exchange an utterance is part of: from its question up to the next question. */
 export function exchangeContaining(items: Exchange[], index: number | null): number | null {
@@ -33,9 +28,9 @@ export function interruptionContext(data: TranscribeResponse, i: Interruption): 
   const byHost = hosts.includes(i.by), onHost = hosts.includes(i.interrupted);
   if (!byHost) return onHost ? "guest" : "other";
   if (onHost) return "other";
-  const e = exchangeAnswering(data.exchanges?.items ?? [], i.index);
-  if (!e) return "other";
-  return dodged(e) ? "dodge" : "answer";
+  // Judged from the guest's words before the cut, not from the verdict on the whole reply: a reply cut short looks
+  // partial or evasive, and that must not excuse the interruption that cut it.
+  return i.during === "answer" || i.during === "dodge" ? i.during : "other";
 }
 
 /** Length of the interview in hours, for rates per hour: the recording without its intro and outro. */
@@ -44,9 +39,6 @@ export function hoursOf(data: TranscribeResponse): number {
   if (s && s.start < s.end && (s.start > 0 || s.end < u.length)) return (u[s.end - 1].end - u[s.start].start) / 3600;
   return (data.duration ?? Math.max(0, ...u.map(u => u.end))) / 3600;
 }
-
-/** A question that leads somewhere: open-ended or challenging, not a softball and not yes/no. */
-export const thoughtful = (e: Exchange): boolean => e.question === "open" || e.question === "challenge";
 
 export const dodged = (e: Exchange): boolean => e.answer === "pivot" || e.answer === "evasive";
 
